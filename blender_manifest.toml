@@ -1,0 +1,25 @@
+schema_version = "1.0.0"
+
+id = "pivot_transform"
+version = "5.1.2"
+name = "Pivot Transform"
+tagline = "Pivot and 3D Cursor transformation"
+maintainer = "Max Derksen"
+type = "add-on"
+website = "https://max-derksen.gitbook.io/pivot-transform/"
+tags = ["3D View"]
+blender_version_min = "5.0.0"
+license = [
+  "SPDX:GPL-3.0-only",
+]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  "*.zip",
+  "TODO_UNDO_FIX.md",
+  "TODO.md",
+  "tmp_gpu_types.html",
+  "ilumetric/build_zip.py",
+]

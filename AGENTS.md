@@ -1,0 +1,1 @@
+- 这是一个blender 5.0+ 的插件项目， 务必使用blender 5.0+ 的api
