@@ -83,6 +83,12 @@
 3. Gizmo
    - `PIVOTTRANSFORM_GGT_object_pivot_transform`
    - gizmo matrix 直接来自当前 pivot/origin 状态。
+   - 样式和操作必须与 `pivot.cursor` 的 `PIVOTTRANSFORM_GGT_gizmo_cursor` 完全一致。
+   - 复用同一套视觉参数：`GIZMO_GT_arrow_3d` 三轴箭头、`GIZMO_GT_dial_3d` 三轴旋转环、XYZ 颜色、黑色 highlight、alpha、line_width、scale_basis、matrix_offset。
+   - 复用同一套朝向逻辑：遵循 `settings.cursor_orient`，支持 `GLOBAL` / `CURSOR` 两种朝向表现。
+   - 平移操作行为与 3D Cursor gizmo 一致：三轴约束、左键拖动、release confirm、Ctrl 使用 Blender 当前 snap。
+   - 旋转操作行为与 `object.pt_rotate_cursor` 一致：拖动旋转、Shift 精调、Ctrl 使用 `snap_angle_increment_3d`。
+   - 实现时只能把目标从 3D Cursor 替换为 pivot/origin；不得写入 `context.scene.cursor`。
    - 拖动回调直接调用 cursor-free pivot/origin helper，实时写入对象 origin。
    - 不通过 `context.scene.cursor` 中转。
 
