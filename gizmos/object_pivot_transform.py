@@ -30,23 +30,9 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         alpha = 0.8
         alpha_highlight = 1.0
 
-        self.arrow_x = self._new_arrow(color_x, color_highlight, alpha, alpha_highlight)
-        self.op_x = self.arrow_x.target_set_operator('transform.translate')
-        self.op_x.constraint_axis = (True, False, False)
-        self.op_x.release_confirm = True
-        self.op_x.cursor_transform = True
-
-        self.arrow_y = self._new_arrow(color_y, color_highlight, alpha, alpha_highlight)
-        self.op_y = self.arrow_y.target_set_operator('transform.translate')
-        self.op_y.constraint_axis = (False, True, False)
-        self.op_y.release_confirm = True
-        self.op_y.cursor_transform = True
-
-        self.arrow_z = self._new_arrow(color_z, color_highlight, alpha, alpha_highlight)
-        self.op_z = self.arrow_z.target_set_operator('transform.translate')
-        self.op_z.constraint_axis = (False, False, True)
-        self.op_z.release_confirm = True
-        self.op_z.cursor_transform = True
+        self.arrow_x, self.handle_x, self.op_x = self._new_axis_arrow(color_x, (True, False, False), alpha, alpha_highlight)
+        self.arrow_y, self.handle_y, self.op_y = self._new_axis_arrow(color_y, (False, True, False), alpha, alpha_highlight)
+        self.arrow_z, self.handle_z, self.op_z = self._new_axis_arrow(color_z, (False, False, True), alpha, alpha_highlight)
 
         self.dial_x = self._new_dial(color_x, color_highlight, alpha, alpha_highlight)
         self.op_dx = self.dial_x.target_set_operator('object.pt_rotate_cursor')
@@ -60,16 +46,37 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         self.op_dz = self.dial_z.target_set_operator('object.pt_rotate_cursor')
         self.op_dz.axis = 'Z'
 
-    def _new_arrow(self, color, color_highlight, alpha, alpha_highlight):
+    def _new_axis_arrow(self, color, constraint_axis, alpha, alpha_highlight):
+        arrow = self._new_arrow(color, alpha, alpha_highlight)
+        handle, op = self._new_drag_handle(color, constraint_axis)
+        return arrow, handle, op
+
+    def _new_arrow(self, color, alpha, alpha_highlight):
         arrow = self.gizmos.new('GIZMO_GT_arrow_3d')
         arrow.use_tooltip = True
         arrow.use_draw_offset_scale = True
         arrow.use_draw_modal = False
+        arrow.hide_select = True
         arrow.color = color
         arrow.color_highlight = color
         arrow.alpha = alpha
         arrow.alpha_highlight = alpha_highlight
         return arrow
+
+    def _new_drag_handle(self, color, constraint_axis):
+        handle = self.gizmos.new('GIZMO_GT_arrow_3d')
+        handle.use_tooltip = False
+        handle.use_draw_offset_scale = True
+        handle.use_draw_modal = False
+        handle.color = color
+        handle.color_highlight = color
+        handle.alpha = 0.001
+        handle.alpha_highlight = 0.001
+        op = handle.target_set_operator('transform.translate')
+        op.constraint_axis = constraint_axis
+        op.release_confirm = True
+        op.cursor_transform = True
+        return handle, op
 
     def _new_dial(self, color, color_highlight, alpha, alpha_highlight):
         dial = self.gizmos.new('GIZMO_GT_dial_3d')
@@ -112,6 +119,9 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         self._prepare_arrow(self.arrow_x, x_matrix, offset)
         self._prepare_arrow(self.arrow_y, y_matrix, offset)
         self._prepare_arrow(self.arrow_z, z_matrix, offset)
+        self._prepare_drag_handle(self.handle_x, self.arrow_x)
+        self._prepare_drag_handle(self.handle_y, self.arrow_y)
+        self._prepare_drag_handle(self.handle_z, self.arrow_z)
         self._prepare_dial(self.dial_x, x_matrix)
         self._prepare_dial(self.dial_y, y_matrix)
         self._prepare_dial(self.dial_z, z_matrix)
@@ -131,6 +141,13 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         arrow.scale_basis = 1.2
         arrow.matrix_basis = matrix
         arrow.matrix_offset = offset
+
+    def _prepare_drag_handle(self, handle, arrow):
+        handle.length = arrow.length
+        handle.line_width = arrow.line_width + 6
+        handle.scale_basis = arrow.scale_basis
+        handle.matrix_basis = arrow.matrix_basis
+        handle.matrix_offset = arrow.matrix_offset
 
     def _prepare_dial(self, dial, matrix):
         dial.scale_basis = 0.7

@@ -198,44 +198,9 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         alpha_highlight = 1
 
         # --- ARROW
-        self.arrow_x = self.gizmos.new('GIZMO_GT_arrow_3d')
-        self.arrow_x.use_tooltip = False
-        self.arrow_x.use_draw_offset_scale = True
-        self.arrow_x.use_draw_modal = False
-        self.arrow_x.color = color_x
-        self.arrow_x.color_highlight = color_x
-        self.arrow_x.alpha = alpha
-        self.arrow_x.alpha_highlight = alpha_highlight
-        self.ar_x = self.arrow_x.target_set_operator('transform.translate')
-        self.ar_x.constraint_axis = (True, False, False)
-        self.ar_x.release_confirm = True
-        self.ar_x.cursor_transform = True
-
-        self.arrow_y = self.gizmos.new('GIZMO_GT_arrow_3d')
-        self.arrow_y.use_tooltip = False
-        self.arrow_y.use_draw_offset_scale = True
-        self.arrow_y.use_draw_modal = False
-        self.arrow_y.color = color_y
-        self.arrow_y.color_highlight = color_y
-        self.arrow_y.alpha = alpha
-        self.arrow_y.alpha_highlight = alpha_highlight
-        self.ar_y = self.arrow_y.target_set_operator('transform.translate')
-        self.ar_y.constraint_axis = (False, True, False)
-        self.ar_y.release_confirm = True
-        self.ar_y.cursor_transform = True
-
-        self.arrow_z = self.gizmos.new('GIZMO_GT_arrow_3d')
-        self.arrow_z.use_tooltip = False
-        self.arrow_z.use_draw_offset_scale = True
-        self.arrow_z.use_draw_modal = False
-        self.arrow_z.color = color_z
-        self.arrow_z.color_highlight = color_z
-        self.arrow_z.alpha = alpha
-        self.arrow_z.alpha_highlight = alpha_highlight
-        self.ar_z = self.arrow_z.target_set_operator('transform.translate')
-        self.ar_z.constraint_axis = (False, False, True)
-        self.ar_z.release_confirm = True
-        self.ar_z.cursor_transform = True
+        self.arrow_x, self.handle_x, self.ar_x = self._new_axis_arrow(color_x, (True, False, False), alpha, alpha_highlight)
+        self.arrow_y, self.handle_y, self.ar_y = self._new_axis_arrow(color_y, (False, True, False), alpha, alpha_highlight)
+        self.arrow_z, self.handle_z, self.ar_z = self._new_axis_arrow(color_z, (False, False, True), alpha, alpha_highlight)
 
         # --- DIAL
         self.dial_x = self.gizmos.new('GIZMO_GT_dial_3d')
@@ -283,6 +248,45 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         # self.ar_dot = self.dot.target_set_operator('transform.translate')
         # self.ar_dot.release_confirm = True
         # self.ar_dot.cursor_transform = True
+
+    def _new_axis_arrow(self, color, constraint_axis, alpha, alpha_highlight):
+        arrow = self._new_arrow(color, alpha, alpha_highlight)
+        handle, op = self._new_drag_handle(color, constraint_axis)
+        return arrow, handle, op
+
+    def _new_arrow(self, color, alpha, alpha_highlight):
+        arrow = self.gizmos.new('GIZMO_GT_arrow_3d')
+        arrow.use_tooltip = False
+        arrow.use_draw_offset_scale = True
+        arrow.use_draw_modal = False
+        arrow.hide_select = True
+        arrow.color = color
+        arrow.color_highlight = color
+        arrow.alpha = alpha
+        arrow.alpha_highlight = alpha_highlight
+        return arrow
+
+    def _new_drag_handle(self, color, constraint_axis):
+        handle = self.gizmos.new('GIZMO_GT_arrow_3d')
+        handle.use_tooltip = False
+        handle.use_draw_offset_scale = True
+        handle.use_draw_modal = False
+        handle.color = color
+        handle.color_highlight = color
+        handle.alpha = 0.001
+        handle.alpha_highlight = 0.001
+        op = handle.target_set_operator('transform.translate')
+        op.constraint_axis = constraint_axis
+        op.release_confirm = True
+        op.cursor_transform = True
+        return handle, op
+
+    def _prepare_drag_handle(self, handle, arrow):
+        handle.length = arrow.length
+        handle.line_width = arrow.line_width + 6
+        handle.scale_basis = arrow.scale_basis
+        handle.matrix_basis = arrow.matrix_basis
+        handle.matrix_offset = arrow.matrix_offset
 
     def invoke_prepare(self, context, gizmo):
         settings = context.scene.pivot_transform
@@ -362,6 +366,10 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         self.arrow_z.scale_basis = sizeCursor * 1.2
         self.arrow_z.matrix_basis = z_matrix_move
         self.arrow_z.matrix_offset = mo_a
+
+        self._prepare_drag_handle(self.handle_x, self.arrow_x)
+        self._prepare_drag_handle(self.handle_y, self.arrow_y)
+        self._prepare_drag_handle(self.handle_z, self.arrow_z)
 
         # --- DIAL
         self.dial_x.scale_basis = sizeCursor * 0.7
