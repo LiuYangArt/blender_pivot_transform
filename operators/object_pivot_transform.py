@@ -2,18 +2,7 @@ import bpy
 from bpy.types import Operator
 from mathutils import Matrix, Vector
 
-from .origin_transform import (
-    is_editable_id,
-    _mesh_translate,
-    _curve_translate,
-    _font_translate,
-    _lattice_translate,
-    _mball_translate,
-    _pointcloud_translate,
-    _gpencil_translate,
-    _apply_inverse_offset,
-    ORIGIN_TO_CURSOR,
-)
+from .origin_transform import is_editable_id
 
 
 _SUPPORTED_OBJECT_TYPES = {
@@ -50,61 +39,32 @@ def _target_objects(context):
     return [obj for obj in objects if _supported_object(obj)]
 
 
-def _data_translate(obj, local_delta):
+def _data_transform(obj, matrix):
     if obj.type == 'EMPTY':
         return True
     if isinstance(obj.data, bpy.types.Mesh):
-        _mesh_translate(obj.data, local_delta, edit_mode=(obj.mode == 'EDIT'))
+        try:
+            obj.data.transform(matrix, shape_keys=True)
+        except TypeError:
+            obj.data.transform(matrix)
     elif isinstance(obj.data, bpy.types.Curve):
-        if obj.type == 'FONT':
-            delta = local_delta.copy()
-            delta.z = 0.0
-            _font_translate(obj.data, delta)
-        else:
-            _curve_translate(obj.data, local_delta)
+        obj.data.transform(matrix)
     elif isinstance(obj.data, bpy.types.Lattice):
-        _lattice_translate(obj.data, local_delta)
+        obj.data.transform(matrix)
     elif isinstance(obj.data, bpy.types.MetaBall):
-        _mball_translate(obj.data, local_delta)
+        obj.data.transform(matrix)
     elif hasattr(bpy.types, 'PointCloud') and isinstance(obj.data, bpy.types.PointCloud):
-        _pointcloud_translate(obj.data, local_delta)
+        obj.data.transform(matrix)
     elif hasattr(bpy.types, 'GreasePencil') and isinstance(obj.data, bpy.types.GreasePencil):
-        if not _gpencil_translate(obj.data, local_delta):
-            raise RuntimeError(f'Failed to move Grease Pencil origin for {obj.name}')
+        if not hasattr(obj.data, 'transform'):
+            raise RuntimeError(f'Grease Pencil pivot rotation is not supported for {obj.name}')
+        obj.data.transform(matrix)
     else:
-        raise RuntimeError(f'Unsupported object data type for pivot move: {obj.name} ({obj.type})')
+        raise RuntimeError(f'Unsupported object data type for pivot transform: {obj.name} ({obj.type})')
     if hasattr(obj.data, 'update'):
         obj.data.update()
     obj.update_tag(refresh={'DATA'})
     return True
-
-
-def move_origin_to_world(context, obj, world_location):
-    obj = _safe_object(obj)
-    if obj is None or not _supported_object(obj):
-        return False
-    world_location = Vector(world_location)
-    if obj.type == 'EMPTY':
-        matrix = obj.matrix_world.copy()
-        matrix.translation = world_location
-        obj.matrix_world = matrix
-        obj.update_tag(refresh={'OBJECT'})
-        return True
-    local_delta = obj.matrix_world.inverted() @ world_location
-    if local_delta.length_squared <= 1e-18:
-        return True
-    _data_translate(obj, local_delta)
-    _apply_inverse_offset(context, obj, local_delta, ORIGIN_TO_CURSOR)
-    return True
-
-
-def _active_pivot_matrix(context):
-    obj = context.active_object
-    if obj is None:
-        return Matrix.Identity(4)
-    matrix = obj.matrix_world.copy().normalized()
-    matrix.translation = obj.matrix_world.translation
-    return matrix
 
 
 def _cursor_state(cursor):
@@ -177,7 +137,7 @@ def _start_session(context):
         raise RuntimeError('No supported selected object for Transform Pivot')
     cursor = context.scene.cursor
     _SESSION = {
-        'objects': [{'object': obj, 'origin': obj.matrix_world.translation.copy()} for obj in objects],
+        'objects': [{'object': obj, 'matrix': obj.matrix_world.copy(), 'origin': obj.matrix_world.translation.copy()} for obj in objects],
         'selected': [obj for obj in context.selected_objects],
         'active': context.active_object,
         'mode': context.mode,
@@ -187,6 +147,7 @@ def _start_session(context):
     }
     _set_cursor_to_active_origin(context)
     _SESSION['cursor_start_location'] = cursor.location.copy()
+    _SESSION['cursor_start_matrix'] = cursor.matrix.copy().normalized()
     _SESSION['last_cursor_location'] = cursor.location.copy()
     context.scene.pt_object_pivot_transform_active = True
     context.scene.pt_object_pivot_transform_matrix = [v for row in cursor.matrix.normalized() for v in row]
@@ -204,7 +165,33 @@ def _session_objects():
     return result
 
 
-def _apply_session_delta(context, delta):
+def _matrix_with_world_location_and_basis(location, basis):
+    matrix = Matrix.Identity(4)
+    for row in range(3):
+        for col in range(3):
+            matrix[row][col] = basis[row][col]
+    matrix.translation = location
+    return matrix
+
+
+def _set_world_matrix_preserve_visual(obj, matrix):
+    if obj.type == 'EMPTY':
+        obj.matrix_world = matrix
+        obj.update_tag(refresh={'OBJECT'})
+        return True
+    compensation = matrix.inverted() @ obj.matrix_world.copy()
+    _data_transform(obj, compensation)
+    obj.matrix_world = matrix
+    return True
+
+
+def _cursor_rotation_delta(context):
+    start = _SESSION['cursor_start_matrix'].to_3x3()
+    current = context.scene.cursor.matrix.normalized().to_3x3()
+    return current @ start.inverted()
+
+
+def _apply_session_transform(context, delta, rotation_delta):
     pairs = _session_objects()
     if not pairs:
         cancel_session(context, restore=False)
@@ -217,7 +204,11 @@ def _apply_session_delta(context, delta):
             if child not in targets:
                 child_mats.append((child, child.matrix_world.copy()))
     for item, obj in pairs:
-        move_origin_to_world(context, obj, item['origin'] + delta)
+        base = item['matrix']
+        location = item['origin'] + delta
+        basis = rotation_delta @ base.to_3x3()
+        matrix = _matrix_with_world_location_and_basis(location, basis)
+        _set_world_matrix_preserve_visual(obj, matrix)
     context.view_layer.update()
     for child, matrix in child_mats:
         child = _safe_object(child)
@@ -230,12 +221,17 @@ def _apply_session_delta(context, delta):
     return True
 
 
+def _apply_session_delta(context, delta):
+    return _apply_session_transform(context, delta, Matrix.Identity(3))
+
+
 def sync_origin_from_cursor(context):
     if not _SESSION:
         return False
     cursor_loc = context.scene.cursor.location.copy()
     delta = cursor_loc - _SESSION['cursor_start_location']
-    ok = _apply_session_delta(context, delta)
+    rotation_delta = _cursor_rotation_delta(context)
+    ok = _apply_session_transform(context, delta, rotation_delta)
     if ok:
         _SESSION['last_cursor_location'] = cursor_loc
     return ok
@@ -279,6 +275,18 @@ def apply_session(context):
         _finish_session(context)
         _SESSION = None
         bpy.ops.ed.undo_push(message='Transform Pivot')
+
+
+def handle_session_exit_event(context, event):
+    if event.value != 'PRESS':
+        return None
+    if event.type == 'ESC':
+        cancel_session(context, restore=True)
+        return {'CANCELLED'}
+    if event.type in {'RET', 'NUMPAD_ENTER', 'RIGHTMOUSE'}:
+        apply_session(context)
+        return {'FINISHED'}
+    return None
 
 
 class OBJECT_OT_pt_object_pivot_transform_start(Operator):
@@ -351,9 +359,9 @@ class OBJECT_OT_pt_object_pivot_transform_monitor(Operator):
             cancel_session(context, restore=False)
             return {'CANCELLED'}
         sync_origin_from_cursor(context)
-        if event.type in {'ESC', 'RIGHTMOUSE'} and event.value == 'PRESS':
-            cancel_session(context, restore=True)
-            return {'CANCELLED'}
+        result = handle_session_exit_event(context, event)
+        if result is not None:
+            return result
         return {'PASS_THROUGH'}
 
 

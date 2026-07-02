@@ -16,7 +16,8 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
 - 临时把 3D Cursor 放到 active object 的真实 origin。
 - 隐藏 3D Cursor overlay，避免视觉上看到 cursor 移动。
 - gizmo 平移直接走 Blender 原生 `transform.translate(cursor_transform=True)`。
-- session monitor 监听 3D Cursor 位置变化，并实时同步到真实 object origin。
+- gizmo 旋转复用 `pivot.cursor` 的 `object.pt_rotate_cursor`，通过 hidden 3D Cursor rotation 同步到 object origin orientation。
+- session monitor 监听 3D Cursor 位置和旋转变化，并实时同步到真实 object origin。
 - Apply / Cancel / 异常退出时恢复 3D Cursor 原始状态和显示状态。
 
 这样 Ctrl snap、约束轴、release confirm 都复用 Blender 原生 3D Cursor transform 行为。
@@ -33,7 +34,7 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
 2. 拖动 gizmo
    - gizmo 箭头使用 `transform.translate` + `cursor_transform=True`。
    - Blender 原生 transform 负责 Ctrl snap、轴约束、confirm/cancel 手感。
-   - monitor 将 3D Cursor 当前位置同步到目标对象真实 origin。
+   - monitor 将 3D Cursor 当前位置和旋转同步到目标对象真实 origin。
    - 多选时遵循现有 pivot 作用范围设置：Active / Selected。
 
 3. `Apply`
@@ -42,8 +43,9 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
    - 恢复 3D Cursor 原始 transform 和显示状态。
    - 退出 Transform Pivot 状态。
 
-4. 取消
-   - `Esc` / 右键取消。
+4. 退出
+   - `Esc` 取消。
+   - `Enter` / 右键 Apply。
    - 恢复进入 Transform Pivot 前记录的所有目标对象 origin 状态。
    - 恢复 3D Cursor 原始 transform 和显示状态。
    - 退出 Transform Pivot 状态。
@@ -88,8 +90,8 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
    - 清理时必须恢复 3D Cursor 状态和 overlay visibility。
 
 7. 支持范围
-   - 首版只实现 origin 平移。
-   - 旋转 gizmo 暂不实现。
+   - 支持 origin 平移和旋转。
+   - 旋转只改变 origin orientation，补偿 object data，保持几何体世界外观不跳。
    - 不支持的对象类型禁用入口，不做 silent fallback。
 
 ## 实现建议
@@ -113,6 +115,7 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
      - `constraint_axis`
      - `release_confirm = True`
      - `cursor_transform = True`
+   - 旋转环复用 `pivot.cursor` 的 `object.pt_rotate_cursor`。
    - gizmo matrix 来自 hidden 3D Cursor proxy。
    - 视觉参数与 `PIVOTTRANSFORM_GGT_gizmo_cursor` 保持一致。
    - 朝向逻辑遵循 `settings.cursor_orient`，支持 `GLOBAL` / `CURSOR`。
@@ -131,7 +134,9 @@ Transform Pivot 使用 **hidden 3D Cursor proxy**：
   - Start 后 3D Cursor 不可见。
   - Ctrl 拖动手感与 `pivot.cursor` 一致。
   - 拖动时对象真实 origin 实时移动。
+  - 旋转时对象真实 origin orientation 实时变化，几何体世界外观不跳。
   - Apply 保留结果并恢复 3D Cursor。
-  - Esc / 右键恢复进入前 pivot 并恢复 3D Cursor。
+  - Esc 恢复进入前 pivot 并恢复 3D Cursor。
+  - Enter / 右键保留结果并恢复 3D Cursor。
   - 父对象 origin 变化时子对象不跳。
   - 切模式/删对象/禁用插件能清理状态。
