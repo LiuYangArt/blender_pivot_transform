@@ -201,9 +201,9 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         self.arrow_x = self.gizmos.new('GIZMO_GT_arrow_3d')
         self.arrow_x.use_tooltip = False
         self.arrow_x.use_draw_offset_scale = True
-        self.arrow_x.use_draw_modal = True
+        self.arrow_x.use_draw_modal = False
         self.arrow_x.color = color_x
-        self.arrow_x.color_highlight = color_highlight
+        self.arrow_x.color_highlight = color_x
         self.arrow_x.alpha = alpha
         self.arrow_x.alpha_highlight = alpha_highlight
         self.ar_x = self.arrow_x.target_set_operator('transform.translate')
@@ -214,9 +214,9 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         self.arrow_y = self.gizmos.new('GIZMO_GT_arrow_3d')
         self.arrow_y.use_tooltip = False
         self.arrow_y.use_draw_offset_scale = True
-        self.arrow_y.use_draw_modal = True
+        self.arrow_y.use_draw_modal = False
         self.arrow_y.color = color_y
-        self.arrow_y.color_highlight = color_highlight
+        self.arrow_y.color_highlight = color_y
         self.arrow_y.alpha = alpha
         self.arrow_y.alpha_highlight = alpha_highlight
         self.ar_y = self.arrow_y.target_set_operator('transform.translate')
@@ -227,9 +227,9 @@ class PIVOTTRANSFORM_GGT_gizmo_cursor(GizmoGroup):
         self.arrow_z = self.gizmos.new('GIZMO_GT_arrow_3d')
         self.arrow_z.use_tooltip = False
         self.arrow_z.use_draw_offset_scale = True
-        self.arrow_z.use_draw_modal = True
+        self.arrow_z.use_draw_modal = False
         self.arrow_z.color = color_z
-        self.arrow_z.color_highlight = color_highlight
+        self.arrow_z.color_highlight = color_z
         self.arrow_z.alpha = alpha
         self.arrow_z.alpha_highlight = alpha_highlight
         self.ar_z = self.arrow_z.target_set_operator('transform.translate')

@@ -64,9 +64,9 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         arrow = self.gizmos.new('GIZMO_GT_arrow_3d')
         arrow.use_tooltip = True
         arrow.use_draw_offset_scale = True
-        arrow.use_draw_modal = True
+        arrow.use_draw_modal = False
         arrow.color = color
-        arrow.color_highlight = color_highlight
+        arrow.color_highlight = color
         arrow.alpha = alpha
         arrow.alpha_highlight = alpha_highlight
         return arrow
