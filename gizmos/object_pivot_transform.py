@@ -31,16 +31,22 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         alpha_highlight = 1.0
 
         self.arrow_x = self._new_arrow(color_x, color_highlight, alpha, alpha_highlight)
-        self.op_x = self.arrow_x.target_set_operator('object.pt_object_pivot_transform_drag')
-        self.op_x.axis = 'X'
+        self.op_x = self.arrow_x.target_set_operator('transform.translate')
+        self.op_x.constraint_axis = (True, False, False)
+        self.op_x.release_confirm = True
+        self.op_x.cursor_transform = True
 
         self.arrow_y = self._new_arrow(color_y, color_highlight, alpha, alpha_highlight)
-        self.op_y = self.arrow_y.target_set_operator('object.pt_object_pivot_transform_drag')
-        self.op_y.axis = 'Y'
+        self.op_y = self.arrow_y.target_set_operator('transform.translate')
+        self.op_y.constraint_axis = (False, True, False)
+        self.op_y.release_confirm = True
+        self.op_y.cursor_transform = True
 
         self.arrow_z = self._new_arrow(color_z, color_highlight, alpha, alpha_highlight)
-        self.op_z = self.arrow_z.target_set_operator('object.pt_object_pivot_transform_drag')
-        self.op_z.axis = 'Z'
+        self.op_z = self.arrow_z.target_set_operator('transform.translate')
+        self.op_z.constraint_axis = (False, False, True)
+        self.op_z.release_confirm = True
+        self.op_z.cursor_transform = True
 
     def _new_arrow(self, color, color_highlight, alpha, alpha_highlight):
         arrow = self.gizmos.new('GIZMO_GT_arrow_3d')
@@ -54,20 +60,16 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         return arrow
 
     def invoke_prepare(self, context, gizmo):
-        settings = context.scene.pivot_transform
-        self.op_x.orientation = settings.cursor_orient
-        self.op_y.orientation = settings.cursor_orient
-        self.op_z.orientation = settings.cursor_orient
+        self._set_translate_orientation(context.scene.pivot_transform.cursor_orient)
 
     def draw_prepare(self, context):
         settings = context.scene.pivot_transform
-        obj = context.active_object
-        if obj is None:
-            return
-        loc, rot, _scale = obj.matrix_world.decompose()
-        scale = Vector((1.0, 1.0, 1.0))
+        cursor = context.scene.cursor
+        orient = settings.cursor_orient
+        self._set_translate_orientation(orient)
 
-        if settings.cursor_orient == 'GLOBAL':
+        loc, rot, scale = cursor.matrix.decompose()
+        if orient == 'GLOBAL':
             x_rot = Quaternion((0.0, 1.0, 0.0), pi / 2)
             y_rot = Quaternion((1.0, 0.0, 0.0), -pi / 2)
             z_rot = Quaternion((0.0, 0.0, 1.0), 0)
@@ -80,6 +82,11 @@ class PIVOTTRANSFORM_GGT_object_pivot_transform(GizmoGroup):
         self._prepare_arrow(self.arrow_x, Matrix.LocRotScale(loc, x_rot, scale).normalized(), offset)
         self._prepare_arrow(self.arrow_y, Matrix.LocRotScale(loc, y_rot, scale).normalized(), offset)
         self._prepare_arrow(self.arrow_z, Matrix.LocRotScale(loc, z_rot, scale).normalized(), offset)
+
+    def _set_translate_orientation(self, orient):
+        for op in (self.op_x, self.op_y, self.op_z):
+            op.orient_type = orient
+            op.orient_matrix_type = orient
 
     def _prepare_arrow(self, arrow, matrix, offset):
         arrow.length = 0.3

@@ -1,10 +1,7 @@
 import bpy
 from bpy.types import Operator
-from bpy.props import EnumProperty
 from mathutils import Matrix, Vector
-from bpy_extras.view3d_utils import location_3d_to_region_2d
 
-from ..ilumetric import pick_util
 from .origin_transform import (
     is_editable_id,
     _mesh_translate,
@@ -110,20 +107,89 @@ def _active_pivot_matrix(context):
     return matrix
 
 
+def _cursor_state(cursor):
+    state = {
+        'location': cursor.location.copy(),
+        'rotation_mode': cursor.rotation_mode,
+        'rotation_euler': cursor.rotation_euler.copy(),
+        'rotation_quaternion': cursor.rotation_quaternion.copy(),
+        'rotation_axis_angle': tuple(cursor.rotation_axis_angle),
+    }
+    return state
+
+
+def _restore_cursor_state(context):
+    if not _SESSION:
+        return
+    state = _SESSION.get('cursor_state')
+    if not state:
+        return
+    cursor = context.scene.cursor
+    cursor.location = state['location']
+    cursor.rotation_mode = state['rotation_mode']
+    if state['rotation_mode'] == 'QUATERNION':
+        cursor.rotation_quaternion = state['rotation_quaternion']
+    elif state['rotation_mode'] == 'AXIS_ANGLE':
+        cursor.rotation_axis_angle = state['rotation_axis_angle']
+    else:
+        cursor.rotation_euler = state['rotation_euler']
+
+
+def _capture_and_hide_cursor_overlays(context):
+    overlays = []
+    wm = context.window_manager
+    for window in getattr(wm, 'windows', []):
+        screen = getattr(window, 'screen', None)
+        if screen is None:
+            continue
+        for area in screen.areas:
+            if area.type != 'VIEW_3D':
+                continue
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    overlays.append((space, space.overlay.show_cursor))
+                    space.overlay.show_cursor = False
+    return overlays
+
+
+def _restore_cursor_overlays():
+    if not _SESSION:
+        return
+    for space, visible in _SESSION.get('cursor_overlays', []):
+        try:
+            space.overlay.show_cursor = visible
+        except ReferenceError:
+            pass
+
+
+def _set_cursor_to_active_origin(context):
+    cursor = context.scene.cursor
+    obj = context.active_object
+    matrix = obj.matrix_world.copy().normalized()
+    matrix.translation = obj.matrix_world.translation
+    cursor.matrix = matrix
+
+
 def _start_session(context):
     global _SESSION
     objects = _target_objects(context)
     if not objects:
         raise RuntimeError('No supported selected object for Transform Pivot')
+    cursor = context.scene.cursor
     _SESSION = {
         'objects': [{'object': obj, 'origin': obj.matrix_world.translation.copy()} for obj in objects],
         'selected': [obj for obj in context.selected_objects],
         'active': context.active_object,
         'mode': context.mode,
         'delta': Vector((0.0, 0.0, 0.0)),
+        'cursor_state': _cursor_state(cursor),
+        'cursor_overlays': _capture_and_hide_cursor_overlays(context),
     }
+    _set_cursor_to_active_origin(context)
+    _SESSION['cursor_start_location'] = cursor.location.copy()
+    _SESSION['last_cursor_location'] = cursor.location.copy()
     context.scene.pt_object_pivot_transform_active = True
-    context.scene.pt_object_pivot_transform_matrix = [v for row in _active_pivot_matrix(context) for v in row]
+    context.scene.pt_object_pivot_transform_matrix = [v for row in cursor.matrix.normalized() for v in row]
     return _SESSION
 
 
@@ -160,8 +226,19 @@ def _apply_session_delta(context, delta):
     context.view_layer.update()
     active = context.active_object
     if active is not None:
-        context.scene.pt_object_pivot_transform_matrix = [v for row in _active_pivot_matrix(context) for v in row]
+        context.scene.pt_object_pivot_transform_matrix = [v for row in context.scene.cursor.matrix.normalized() for v in row]
     return True
+
+
+def sync_origin_from_cursor(context):
+    if not _SESSION:
+        return False
+    cursor_loc = context.scene.cursor.location.copy()
+    delta = cursor_loc - _SESSION['cursor_start_location']
+    ok = _apply_session_delta(context, delta)
+    if ok:
+        _SESSION['last_cursor_location'] = cursor_loc
+    return ok
 
 
 def _restore_selection(context):
@@ -178,97 +255,30 @@ def _restore_selection(context):
         context.view_layer.objects.active = active
 
 
+def _finish_session(context):
+    context.scene.pt_object_pivot_transform_active = False
+    _restore_cursor_state(context)
+    _restore_cursor_overlays()
+
+
 def cancel_session(context, restore=True):
     global _SESSION
     if _SESSION and restore:
         _apply_session_delta(context, Vector((0.0, 0.0, 0.0)))
         _restore_selection(context)
-    context.scene.pt_object_pivot_transform_active = False
+    if _SESSION:
+        _finish_session(context)
     _SESSION = None
 
 
 def apply_session(context):
     global _SESSION
-    context.scene.pt_object_pivot_transform_active = False
-    _SESSION = None
-    bpy.ops.ed.undo_push(message='Transform Pivot')
-
-
-def _axis_world(context, axis, orientation):
-    base = {
-        'X': Vector((1.0, 0.0, 0.0)),
-        'Y': Vector((0.0, 1.0, 0.0)),
-        'Z': Vector((0.0, 0.0, 1.0)),
-    }[axis]
-    if orientation == 'GLOBAL' or context.active_object is None:
-        return base
-    return (context.active_object.matrix_world.to_quaternion() @ base).normalized()
-
-
-def _snap_elements(context):
-    tool_settings = context.scene.tool_settings
-    elements = set(getattr(tool_settings, 'snap_elements', set()) or set())
-    if not elements:
-        elements = set(getattr(tool_settings, 'snap_elements_base', set()) or set())
-    return elements or {'INCREMENT'}
-
-
-def _increment_step(context):
-    space = getattr(context, 'space_data', None)
-    overlay = getattr(space, 'overlay', None)
-    grid_scale = getattr(overlay, 'grid_scale', 0.0) if overlay else 0.0
-    return float(grid_scale) if grid_scale and grid_scale > 0.0 else 1.0
-
-
-def _snap_increment_units(context, value):
-    step = _increment_step(context)
-    return round(value / step) * step
-
-
-def _snap_pick_elements(elements):
-    result = set()
-    if 'VERTEX' in elements:
-        result.add('VERT')
-    if 'EDGE' in elements or 'EDGE_MIDPOINT' in elements or 'EDGE_PERPENDICULAR' in elements:
-        result.add('EDGE')
-    if {'FACE', 'FACE_PROJECT', 'FACE_NEAREST'} & elements:
-        result.add('FACE')
-    return tuple(result)
-
-
-def _visible_snap_targets(context):
-    session_targets = {obj for _item, obj in _session_objects()}
-    use_self = getattr(context.scene.tool_settings, 'use_snap_self', True)
-    targets = []
-    for obj in context.visible_objects:
-        if not use_self and obj in session_targets:
-            continue
-        if obj.visible_get():
-            targets.append(obj)
-    return targets
-
-
-def _snap_axis_units(context, event, origin, axis, value):
-    elements = _snap_elements(context)
-    pick_elements = _snap_pick_elements(elements)
-    if pick_elements:
-        result = pick_util.pick_element(
-            context,
-            _visible_snap_targets(context),
-            (event.mouse_region_x, event.mouse_region_y),
-            radius_px=18.0,
-            elements=pick_elements,
-            backface_culling=getattr(context.scene.tool_settings, 'use_snap_backface_culling', False),
-            face_center=False,
-            edge_midpoint='EDGE_MIDPOINT' in elements,
-            use_modifiers=True,
-            occlusion=True,
-        )
-        if result is not None and not result.is_empty and result.hitpos is not None:
-            return (result.hitpos - origin).dot(axis)
-    if 'INCREMENT' in elements or 'GRID' in elements:
-        return _snap_increment_units(context, value)
-    return value
+    if _SESSION:
+        sync_origin_from_cursor(context)
+        _restore_selection(context)
+        _finish_session(context)
+        _SESSION = None
+        bpy.ops.ed.undo_push(message='Transform Pivot')
 
 
 class OBJECT_OT_pt_object_pivot_transform_start(Operator):
@@ -340,68 +350,11 @@ class OBJECT_OT_pt_object_pivot_transform_monitor(Operator):
         if context.mode != 'OBJECT' or not _session_objects():
             cancel_session(context, restore=False)
             return {'CANCELLED'}
+        sync_origin_from_cursor(context)
         if event.type in {'ESC', 'RIGHTMOUSE'} and event.value == 'PRESS':
             cancel_session(context, restore=True)
             return {'CANCELLED'}
         return {'PASS_THROUGH'}
-
-
-class OBJECT_OT_pt_object_pivot_transform_drag(Operator):
-    bl_idname = 'object.pt_object_pivot_transform_drag'
-    bl_label = 'Move Pivot Origin'
-    bl_description = 'Drag the selected object origin along an axis'
-    bl_options = {'INTERNAL'}
-
-    axis: EnumProperty(items=[('X', 'X', ''), ('Y', 'Y', ''), ('Z', 'Z', '')], default='X')
-    orientation: EnumProperty(items=[('GLOBAL', 'Global', ''), ('CURSOR', 'Local', '')], default='GLOBAL')
-
-    def invoke(self, context, event):
-        if not getattr(context.scene, 'pt_object_pivot_transform_active', False):
-            return {'CANCELLED'}
-        pivot = context.active_object.matrix_world.translation.copy()
-        axis = _axis_world(context, self.axis, self.orientation)
-        start_2d = location_3d_to_region_2d(context.region, context.region_data, pivot)
-        end_2d = location_3d_to_region_2d(context.region, context.region_data, pivot + axis)
-        if start_2d is None or end_2d is None:
-            self.report({'WARNING'}, 'Pivot axis is not visible')
-            return {'CANCELLED'}
-        screen_axis = end_2d - start_2d
-        if screen_axis.length < 1e-3:
-            self.report({'WARNING'}, 'Pivot axis is parallel to view')
-            return {'CANCELLED'}
-        self._start_mouse = Vector((event.mouse_region_x, event.mouse_region_y))
-        self._active_origin = _SESSION['objects'][0]['origin'].copy()
-        self._base_delta = _SESSION.get('delta', Vector((0.0, 0.0, 0.0))).copy()
-        self._screen_axis = screen_axis.normalized()
-        self._pixels_per_unit = screen_axis.length
-        self._axis_world = axis
-        context.window_manager.modal_handler_add(self)
-        return {'RUNNING_MODAL'}
-
-    def modal(self, context, event):
-        if event.type == 'MOUSEMOVE':
-            current = Vector((event.mouse_region_x, event.mouse_region_y))
-            pixels = (current - self._start_mouse).dot(self._screen_axis)
-            units = pixels / self._pixels_per_unit
-            axis_base = self._base_delta.dot(self._axis_world)
-            axis_value = axis_base + units
-            if event.ctrl:
-                axis_value = _snap_axis_units(
-                    context,
-                    event,
-                    self._active_origin,
-                    self._axis_world,
-                    axis_value,
-                )
-            delta = self._base_delta + self._axis_world * (axis_value - axis_base)
-            _apply_session_delta(context, delta)
-            return {'RUNNING_MODAL'}
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
-            return {'FINISHED'}
-        if event.type in {'ESC', 'RIGHTMOUSE'}:
-            cancel_session(context, restore=True)
-            return {'CANCELLED'}
-        return {'RUNNING_MODAL', 'PASS_THROUGH'}
 
 
 classes = [
@@ -409,7 +362,6 @@ classes = [
     OBJECT_OT_pt_object_pivot_transform_apply,
     OBJECT_OT_pt_object_pivot_transform_cancel,
     OBJECT_OT_pt_object_pivot_transform_monitor,
-    OBJECT_OT_pt_object_pivot_transform_drag,
 ]
 
 
