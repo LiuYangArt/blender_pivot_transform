@@ -17,14 +17,12 @@ def get_hotkey_entry_item(km, kmi_name, kmi_value, properties):
 
 pt_keymaps = []
 
-# Описатели созданных нами keymap-айтемов: (keymap_name, space_type, operator_idname, properties.name).
-# На unregister мы заново находим айтемы по этим данным в ЖИВОМ keyconfig, а не разыменовываем
-# сохранённые в pt_keymaps указатели — они к моменту выхода из Blender могут быть висячими
-# (keyconfig пересобирается за сессию, а Python-обёртки кеймапов Blender не инвалидирует).
+# Keymap items created by this add-on. Keep them in the add-on keyconfig only;
+# deleting from the user keyconfig can remove the user's own shortcuts on exit.
 _kmi_specs = (
-    ('3D View', 'VIEW_3D', 'wm.call_menu_pie', 'VIEW3D_MT_pie_pivot'),
-    ('3D View', 'VIEW_3D', 'wm.tool_set_by_id', 'pivot.transform'),
-    ('3D View', 'VIEW_3D', 'wm.tool_set_by_id', 'pivot.cursor'),
+    ('3D View', 'wm.call_menu_pie', 'VIEW3D_MT_pie_pivot'),
+    ('3D View', 'wm.tool_set_by_id', 'pivot.transform'),
+    ('3D View', 'wm.tool_set_by_id', 'pivot.cursor'),
 )
 
 
@@ -32,7 +30,7 @@ def _remove_registered_keymap_items(key_conf):
     if key_conf is None:
         return
 
-    for km_name, _space_type, operator_idname, prop_name in _kmi_specs:
+    for km_name, operator_idname, prop_name in _kmi_specs:
         km = key_conf.keymaps.get(km_name)
         if km is None:
             continue
@@ -49,14 +47,11 @@ def register():
     wm = bpy.context.window_manager
     pt_keymaps.clear()
 
-    # Remove stale entries from older versions that registered into the add-on
-    # keyconfig, and avoid duplicates when the add-on is reloaded in-place.
+    # Avoid duplicates when the add-on is reloaded in-place. Never touch
+    # wm.keyconfigs.user here: those are the user's persistent shortcuts.
     _remove_registered_keymap_items(wm.keyconfigs.addon)
-    _remove_registered_keymap_items(wm.keyconfigs.user)
 
-    # Use the user keyconfig so Blender's normal Keymap search can find these
-    # shortcuts and the active keyconfig receives them reliably.
-    key_conf = wm.keyconfigs.user or wm.keyconfigs.addon
+    key_conf = wm.keyconfigs.addon
     if not key_conf:
         return
 
@@ -89,5 +84,4 @@ def unregister():
     if wm is None:
         return
 
-    _remove_registered_keymap_items(wm.keyconfigs.user)
     _remove_registered_keymap_items(wm.keyconfigs.addon)

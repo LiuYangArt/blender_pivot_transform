@@ -124,7 +124,7 @@ class PIVOT_transform_preferences(AddonPreferences):
         layout.label(text="Keymaps", icon='KEYINGSET')
         col = layout.column()
         wm = context.window_manager
-        kc = wm.keyconfigs.user or wm.keyconfigs.addon
+        kc = wm.keyconfigs.addon
         km = kc.keymaps.get('3D View') if kc else None
         if km is None:
             col.label(text='No 3D View keymap found')
