@@ -382,7 +382,13 @@ class VIEW3D_MT_pie_pivot(Menu):
         pie.separator()
 
         #7
-        pie.separator()
+        if context.mode == 'OBJECT':
+            if getattr(context.scene, 'pt_object_pivot_transform_active', False):
+                pie.operator('object.pt_object_pivot_transform_apply', text='Apply', icon='CHECKMARK')
+            else:
+                pie.operator('object.pt_object_pivot_transform_start', text='Transform Pivot', icon='PIVOT_ACTIVE')
+        else:
+            pie.separator()
 
         #8
         pie.separator()

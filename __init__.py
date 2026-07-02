@@ -16,6 +16,7 @@ from .gizmos import (
     cursor,
     flow,
     objects,
+    object_pivot_transform as object_pivot_transform_gizmo,
     pivot_save,
     pivot_to_cursor,
     #ui_widget,
@@ -28,6 +29,7 @@ from .operators import (
     pivot_apply,
     pivot_drop,
     pivot_transform,
+    object_pivot_transform as object_pivot_transform_ops,
     pivot_to_select,
     pt_origin_set,
     pt_to_bottom,
@@ -41,6 +43,7 @@ modules = (
     ops,
     origin_transform,
     pivot_transform,
+    object_pivot_transform_ops,
     pivot_to_select,
     pivot_apply,
     pivot_drop,
@@ -54,6 +57,7 @@ modules = (
 
     flow,
     objects,
+    object_pivot_transform_gizmo,
 
     pivot_to_cursor,
     xform,
