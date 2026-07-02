@@ -4,6 +4,7 @@ from bpy.props import EnumProperty
 from mathutils import Matrix, Vector
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 
+from ..ilumetric import pick_util
 from .origin_transform import (
     is_editable_id,
     _mesh_translate,
@@ -204,13 +205,70 @@ def _axis_world(context, axis, orientation):
     return (context.active_object.matrix_world.to_quaternion() @ base).normalized()
 
 
-def _snap_units(context, value):
+def _snap_elements(context):
     tool_settings = context.scene.tool_settings
-    elements = getattr(tool_settings, 'snap_elements', set())
-    if elements and not ({'INCREMENT', 'GRID'} & set(elements)):
-        return value
-    step = getattr(tool_settings, 'snap_increment', 0.0) or 1.0
+    elements = set(getattr(tool_settings, 'snap_elements', set()) or set())
+    if not elements:
+        elements = set(getattr(tool_settings, 'snap_elements_base', set()) or set())
+    return elements or {'INCREMENT'}
+
+
+def _increment_step(context):
+    space = getattr(context, 'space_data', None)
+    overlay = getattr(space, 'overlay', None)
+    grid_scale = getattr(overlay, 'grid_scale', 0.0) if overlay else 0.0
+    return float(grid_scale) if grid_scale and grid_scale > 0.0 else 1.0
+
+
+def _snap_increment_units(context, value):
+    step = _increment_step(context)
     return round(value / step) * step
+
+
+def _snap_pick_elements(elements):
+    result = set()
+    if 'VERTEX' in elements:
+        result.add('VERT')
+    if 'EDGE' in elements or 'EDGE_MIDPOINT' in elements or 'EDGE_PERPENDICULAR' in elements:
+        result.add('EDGE')
+    if {'FACE', 'FACE_PROJECT', 'FACE_NEAREST'} & elements:
+        result.add('FACE')
+    return tuple(result)
+
+
+def _visible_snap_targets(context):
+    session_targets = {obj for _item, obj in _session_objects()}
+    use_self = getattr(context.scene.tool_settings, 'use_snap_self', True)
+    targets = []
+    for obj in context.visible_objects:
+        if not use_self and obj in session_targets:
+            continue
+        if obj.visible_get():
+            targets.append(obj)
+    return targets
+
+
+def _snap_axis_units(context, event, origin, axis, value):
+    elements = _snap_elements(context)
+    pick_elements = _snap_pick_elements(elements)
+    if pick_elements:
+        result = pick_util.pick_element(
+            context,
+            _visible_snap_targets(context),
+            (event.mouse_region_x, event.mouse_region_y),
+            radius_px=18.0,
+            elements=pick_elements,
+            backface_culling=getattr(context.scene.tool_settings, 'use_snap_backface_culling', False),
+            face_center=False,
+            edge_midpoint='EDGE_MIDPOINT' in elements,
+            use_modifiers=True,
+            occlusion=True,
+        )
+        if result is not None and not result.is_empty and result.hitpos is not None:
+            return (result.hitpos - origin).dot(axis)
+    if 'INCREMENT' in elements or 'GRID' in elements:
+        return _snap_increment_units(context, value)
+    return value
 
 
 class OBJECT_OT_pt_object_pivot_transform_start(Operator):
@@ -312,6 +370,7 @@ class OBJECT_OT_pt_object_pivot_transform_drag(Operator):
             self.report({'WARNING'}, 'Pivot axis is parallel to view')
             return {'CANCELLED'}
         self._start_mouse = Vector((event.mouse_region_x, event.mouse_region_y))
+        self._active_origin = _SESSION['objects'][0]['origin'].copy()
         self._base_delta = _SESSION.get('delta', Vector((0.0, 0.0, 0.0))).copy()
         self._screen_axis = screen_axis.normalized()
         self._pixels_per_unit = screen_axis.length
@@ -324,9 +383,18 @@ class OBJECT_OT_pt_object_pivot_transform_drag(Operator):
             current = Vector((event.mouse_region_x, event.mouse_region_y))
             pixels = (current - self._start_mouse).dot(self._screen_axis)
             units = pixels / self._pixels_per_unit
+            axis_base = self._base_delta.dot(self._axis_world)
+            axis_value = axis_base + units
             if event.ctrl:
-                units = _snap_units(context, units)
-            _apply_session_delta(context, self._base_delta + self._axis_world * units)
+                axis_value = _snap_axis_units(
+                    context,
+                    event,
+                    self._active_origin,
+                    self._axis_world,
+                    axis_value,
+                )
+            delta = self._base_delta + self._axis_world * (axis_value - axis_base)
+            _apply_session_delta(context, delta)
             return {'RUNNING_MODAL'}
         if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             return {'FINISHED'}
