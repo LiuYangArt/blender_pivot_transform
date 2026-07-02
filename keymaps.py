@@ -66,7 +66,7 @@ def register():
     kmi = km.keymap_items.new('wm.tool_set_by_id', type='D', value='PRESS', ctrl=False, alt=False, shift=False, head=True)
     kmi.properties.name = 'pivot.transform'
     kmi.properties.cycle = True
-    kmi.active = True
+    kmi.active = False
     pt_keymaps.append((km, kmi))
 
     # 3D Cursor tool — отдельный инструмент, свой хотkey. Выключен по умолчанию:

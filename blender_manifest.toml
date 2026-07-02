@@ -1,8 +1,8 @@
 schema_version = "1.0.0"
 
-id = "pivot_transform"
+id = "pivot_transform_fork"
 version = "5.1.2"
-name = "Pivot Transform"
+name = "Pivot Transform Fork"
 tagline = "Pivot and 3D Cursor transformation"
 maintainer = "Max Derksen"
 type = "add-on"
